@@ -14,13 +14,12 @@ import (
 StegoImgWriter doc
 */
 type StegoImgWriter struct {
-	is_closed  bool
+	is_open  bool
 	orig_img   image.Image
 	new_img    *image.NRGBA64
 	output     io.Writer
 	format     string
 	data []byte
-	space_left int
 }
 
 /*
@@ -31,6 +30,7 @@ of this error, as it will be retured even if all bytes were written
 successfully if it fills the final available byte."
 */
 var ImageFullError = errors.New("Image full. No more data can be written.")
+var ImageClosedError = errors.New("Image is closed for writing or wasn't opened properly.")
 
 /*
 Create a new StegoImgWriter.
@@ -53,11 +53,15 @@ func NewStegoImgWriter(orig_img io.Reader, new_img io.Writer) (img *StegoImgWrit
 	// create a new image
 	tmp_img.new_img = image.NewNRGBA64(tmp_img.orig_img.Bounds())
 
-	// keep track of the space left
-	tmp_img.space_left = (((tmp_img.orig_img.Bounds().Max.X - 1) * (tmp_img.orig_img.Bounds().Max.Y - 1)) * 3) - 3
-
 	// make the data array to store all potential data
-	tmp_img.data = make([]byte, 0, tmp_img.space_left)
+	size := (tmp_img.orig_img.Bounds().Max.X - 1) * (tmp_img.orig_img.Bounds().Max.Y - 1) * 3
+	tmp_img.data = make([]byte, 0, size)
+
+	// block out space for the size argument
+	tmp_img.data = append(tmp_img.data, 0, 0, 0, 0)
+
+	// mark image as open
+	tmp_img.is_open = true
 
 	// all was successful, return the new pointer
 	img = tmp_img
@@ -75,54 +79,17 @@ Note that the image is not actually created until the call to Close, even if
 the medium is full.
 */
 func (img *StegoImgWriter) Write(p []byte) (n int, err error) {
-
-	// keep track of written bytes
-	n = 0
-	to_write := len(p)
-
-	if to_write > img.space_left {
-		to_write = img.space_left
+	if !img.is_open {
+		return n, ImageClosedError
 	}
-
-	// watch the maximums
-	bounds := img.orig_img.Bounds()
-	bound_x := bounds.Max.X
-	bound_y := bounds.Max.Y
-
-	var orig_color color.Color
-	var vals [3]uint32
-	var tmp uint32
-
-	// for each row in the picture
-	for ; img.y < bound_y && to_write > 0; img.y++ {
-
-		// for each column in the row
-		for ; img.x < bound_x && to_write > 0; img.x++ {
-
-			// get the pixel at the row/column
-			orig_color = img.orig_img.At(img.x, img.y)
-
-			// get the colors from the pixel
-			vals[0], vals[1], vals[2], _ = orig_color.RGBA()
-
-			// for each of the 3 color values per pixel
-			for ; img.col < 3 && to_write > 0; img.col++ {
-
-				// encode a single byte into the value
-				// update loop trackers
-				to_write--
-				img.space_left--
-				n++
-			}
-
+	for i := 0; i < len(p); i++ {
+		if len(img.data) < cap(img.data) {
+		img.data = append(img.data, p[i])
+		n++
+		} else {
+			return n, ImageFullError
 		}
 	}
-
-	// if the image is full, return the error
-	if img.y == bound_y && img.x == bound_x {
-		return n, ImageFullError
-	}
-
 	return n, nil
 }
 
@@ -132,7 +99,56 @@ be written to the new_img file provided upon creation.
 */
 func (img *StegoImgWriter) Close() error {
 
-	img.is_closed = true
+	// calculate the total size of the file
+	var size uint32 = uint32(len(img.data))
+
+	// set the size into the data
+	img.data[3] = byte(size)
+	img.data[2] = byte(size >> 8)
+	img.data[1] = byte(size >> 16)
+	img.data[0] = byte(size >> 24)
+
+	// the data byte to write
+	pos := 0
+
+	// for each row in the image
+	for y := 0; y < img.orig_img.Bounds().Max.Y; y++ {
+
+		// for each column in the row
+		for x := 0; x < img.orig_img.Bounds().Max.X; x++ {
+
+			// get the color
+			col := img.orig_img.At(x, y)
+
+			//get the values
+			var vals [3]uint32
+			vals[0], vals[1], vals[2], _ = col.RGBA()
+
+			// for each color value in the pixel
+			for v := 0; v < 3; v++ {
+
+				// check if there's data to encode
+				if pos < len(img.data) {
+
+					// Encode the byte into the value
+					vals[pos] = vals[pos] & 0xFF00
+					vals[pos] = vals[pos] | uint32(img.data[pos])
+
+				}
+
+				// else no data to encode, nothing to do
+
+			} // end of each pixel
+
+			// write the pixel to the new image
+			img.new_img.SetNRGBA64(x, y, color.NRGBA64{ uint16(vals[0]), uint16(vals[1]), uint16(vals[2]), 0xFFFF })
+
+		} // end of each column
+
+	} // end of each row
+
+
+	img.is_open = false
 
 	// determine the format to encode into
 	switch img.format {
