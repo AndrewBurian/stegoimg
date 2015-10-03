@@ -13,7 +13,9 @@ import (
 )
 
 /*
-StegoImgWriter doc
+A StegoImgWriter encompasses an input image, and a resulting
+output image. As data is written to it, the data is encoded
+into the data from the input and written to the output.
 */
 type StegoImgWriter struct {
 	is_open  bool
@@ -32,6 +34,10 @@ of this error, as it will be retured even if all bytes were written
 successfully if it fills the final available byte."
 */
 var ImageFullError = errors.New("Image full. No more data can be written.")
+
+/*
+Error returned if the image is closed for writing
+*/
 var ImageClosedError = errors.New("Image is closed for writing or wasn't opened properly.")
 
 /*
@@ -80,7 +86,8 @@ Write data into an image. This will encode the data into the least significant
 bits of the color values of each pixel.
 
 After each pixel has had data encoded into it, subsequent calls to Write will
-return 0 bytes written, as well as a ImageFullError.
+return 0 bytes written, as well as a ImageFullError. The n value should be
+considered before the EOF error
 
 Note that the image is not actually created until the call to Close, even if
 the medium is full.
@@ -111,11 +118,7 @@ func (img *StegoImgWriter) Close() error {
 
 	// set the size into the data
 	binary.BigEndian.PutUint32(img.data[:4], size)
-/*	img.data[3] = byte(size)
-	img.data[2] = byte(size >> 8)
-	img.data[1] = byte(size >> 16)
-	img.data[0] = byte(size >> 24)
-*/
+
 	// the data byte to write
 	pos := 0
 
@@ -159,6 +162,7 @@ func (img *StegoImgWriter) Close() error {
 	img.is_open = false
 
 	// determine the format to encode into
+	// BUG(Andrew): only PNG format currently works
 	switch img.format {
 	case "png":
 		png.Encode(img.output, img.new_img)
