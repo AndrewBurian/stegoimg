@@ -2,6 +2,7 @@ package stegoimg
 
 import (
 	"errors"
+	"golang.org/x/image/bmp"
 	"image"
 	"image/color"
 	"image/gif"
@@ -15,11 +16,11 @@ StegoImgWriter doc
 */
 type StegoImgWriter struct {
 	is_open  bool
-	orig_img   image.Image
-	new_img    *image.NRGBA64
-	output     io.Writer
-	format     string
-	data []byte
+	orig_img image.Image
+	new_img  *image.NRGBA64
+	output   io.Writer
+	format   string
+	data     []byte
 }
 
 /*
@@ -37,6 +38,8 @@ Create a new StegoImgWriter.
 orig_img is a reader which should be the file of the image to encode the data into.
 new_img is the file that the encoded image will be written to.
 format can be one of "png", "jpeg", or "gif"
+
+The orig_img reader need not remain open after the call returns. The writer must remain open until after the call to Close returns.
 */
 func NewStegoImgWriter(orig_img io.Reader, new_img io.Writer) (img *StegoImgWriter, e error) {
 
@@ -59,6 +62,9 @@ func NewStegoImgWriter(orig_img io.Reader, new_img io.Writer) (img *StegoImgWrit
 
 	// block out space for the size argument
 	tmp_img.data = append(tmp_img.data, 0, 0, 0, 0)
+
+	// save output
+	tmp_img.output = new_img
 
 	// mark image as open
 	tmp_img.is_open = true
@@ -84,8 +90,8 @@ func (img *StegoImgWriter) Write(p []byte) (n int, err error) {
 	}
 	for i := 0; i < len(p); i++ {
 		if len(img.data) < cap(img.data) {
-		img.data = append(img.data, p[i])
-		n++
+			img.data = append(img.data, p[i])
+			n++
 		} else {
 			return n, ImageFullError
 		}
@@ -128,11 +134,12 @@ func (img *StegoImgWriter) Close() error {
 			for v := 0; v < 3; v++ {
 
 				// check if there's data to encode
-				if pos < len(img.data) {
+				if pos < len(img.data) && pos < len(img.data) {
 
 					// Encode the byte into the value
-					vals[pos] = vals[pos] & 0xFF00
-					vals[pos] = vals[pos] | uint32(img.data[pos])
+					vals[v] = vals[v] & 0xFF00
+					vals[v] = vals[v] | uint32(img.data[pos])
+					pos++
 
 				}
 
@@ -141,12 +148,11 @@ func (img *StegoImgWriter) Close() error {
 			} // end of each pixel
 
 			// write the pixel to the new image
-			img.new_img.SetNRGBA64(x, y, color.NRGBA64{ uint16(vals[0]), uint16(vals[1]), uint16(vals[2]), 0xFFFF })
+			img.new_img.SetNRGBA64(x, y, color.NRGBA64{uint16(vals[0]), uint16(vals[1]), uint16(vals[2]), 0xFFFF})
 
 		} // end of each column
 
 	} // end of each row
-
 
 	img.is_open = false
 
@@ -158,6 +164,8 @@ func (img *StegoImgWriter) Close() error {
 		jpeg.Encode(img.output, img.new_img, &jpeg.Options{100})
 	case "gif":
 		gif.Encode(img.output, img.new_img, &gif.Options{256, nil, nil})
+	case "bmp":
+		bmp.Encode(img.output, img.new_img)
 	default:
 		return errors.New("Somehow got an unaccepted format of " + img.format)
 	}
