@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"fmt"
 )
 
 /*
@@ -76,9 +77,10 @@ ReadLoop:
 				// if this is the first readthrough, get the size
 				if pos == 4 && !got_size {
 					size := binary.BigEndian.Uint32(img.data)
-					img.data = make([]byte, 0, size)
+					img.data = make([]byte, size)
 					pos = 0
 					got_size = true
+					fmt.Printf("Reader: File size of %v bytes\n", size)
 				}
 
 				// else no data to encode, nothing to do
@@ -99,6 +101,8 @@ func (img *StegoImgReader) Read(p []byte) (n int, e error) {
 	if to_read > len(img.data)-img.pos {
 		to_read = len(img.data) - img.pos
 	}
+	fmt.Printf("Pos %v\n", img.pos)
+	fmt.Printf("Read requested for %v of %v, reading %v\n", len(p), len(img.data), to_read)
 
 	for n = 0; n < to_read; n++ {
 		p[n] = img.data[img.pos]

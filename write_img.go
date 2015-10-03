@@ -107,7 +107,7 @@ be written to the new_img file provided upon creation.
 func (img *StegoImgWriter) Close() error {
 
 	// calculate the total size of the file
-	var size uint32 = uint32(len(img.data))
+	var size uint32 = uint32(len(img.data) - 4)
 
 	// set the size into the data
 	binary.BigEndian.PutUint32(img.data[:4], size)
