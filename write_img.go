@@ -1,6 +1,7 @@
 package stegoimg
 
 import (
+	"encoding/binary"
 	"errors"
 	"golang.org/x/image/bmp"
 	"image"
@@ -109,11 +110,12 @@ func (img *StegoImgWriter) Close() error {
 	var size uint32 = uint32(len(img.data))
 
 	// set the size into the data
-	img.data[3] = byte(size)
+	binary.BigEndian.PutUint32(img.data[:4], size)
+/*	img.data[3] = byte(size)
 	img.data[2] = byte(size >> 8)
 	img.data[1] = byte(size >> 16)
 	img.data[0] = byte(size >> 24)
-
+*/
 	// the data byte to write
 	pos := 0
 
