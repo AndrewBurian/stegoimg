@@ -56,6 +56,9 @@ func NewStegoImgWriter(orig_img io.Reader, new_img io.Writer) (img *StegoImgWrit
 	// attempt to decode the original image
 	tmp_img.orig_img, tmp_img.format, e = image.Decode(orig_img)
 
+	// BUG(Andrew): only PNG format currently works
+	tmp_img.format = "png"
+
 	if e != nil {
 		return
 	}
@@ -162,7 +165,6 @@ func (img *StegoImgWriter) Close() error {
 	img.is_open = false
 
 	// determine the format to encode into
-	// BUG(Andrew): only PNG format currently works
 	switch img.format {
 	case "png":
 		png.Encode(img.output, img.new_img)
@@ -178,4 +180,11 @@ func (img *StegoImgWriter) Close() error {
 
 	return nil
 
+}
+
+/*
+Returns the amount of space left for data in the image
+*/
+func (img *StegoImgWriter) SpaceLeft() int {
+	return cap(img.data) - len(img.data)
 }
